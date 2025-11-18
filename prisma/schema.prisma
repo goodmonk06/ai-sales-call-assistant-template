@@ -1,0 +1,35 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ScriptTemplate {
+  id            String     @id @default(cuid())
+  name          String
+  targetProfile String     // 対象顧客プロファイル（例: 歯科医院、整骨院など）
+  purpose       String     // 目的（例: アポ取得、商品紹介など）
+  bodyMarkdown  String     @db.Text // スクリプト本文（Markdown形式）
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  callLogs      CallLog[]
+}
+
+model CallLog {
+  id                  String          @id @default(cuid())
+  scriptTemplateId    String
+  scriptTemplate      ScriptTemplate  @relation(fields: [scriptTemplateId], references: [id], onDelete: Cascade)
+  callDate            DateTime
+  outcome             String          // 結果（例: アポ獲得、検討中、見送りなど）
+  notes               String          @db.Text // 通話メモ
+  aiFeedbackMarkdown  String?         @db.Text // AIフィードバック（Markdown形式）
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
