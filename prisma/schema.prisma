@@ -10,26 +10,152 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model ScriptTemplate {
-  id            String     @id @default(cuid())
-  name          String
-  targetProfile String     // 対象顧客プロファイル（例: 歯科医院、整骨院など）
-  purpose       String     // 目的（例: アポ取得、商品紹介など）
-  bodyMarkdown  String     @db.Text // スクリプト本文（Markdown形式）
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+enum UserRole {
+  ADMIN
+  MANAGER
+  REP
+}
 
-  callLogs      CallLog[]
+enum CallOutcome {
+  APPOINTMENT_SET
+  FOLLOW_UP_SCHEDULED
+  NOT_INTERESTED
+  NO_ANSWER
+  VOICEMAIL
+  CALLBACK_REQUESTED
+  OTHER
+}
+
+enum ScriptStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      UserRole @default(REP)
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  callLogs            CallLog[]
+  coachingNotes       CoachingNote[]
+  createdScripts      ScriptTemplate[]       @relation("CreatedScripts")
+  createdScriptVersions ScriptVersion[]
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members User[]
+  scripts ScriptTemplate[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String?  // Hex color for UI display
+  createdAt DateTime @default(now())
+
+  scripts  ScriptTag[]
+  callLogs CallTag[]
+}
+
+model ScriptTag {
+  scriptId String
+  tagId    String
+  script   ScriptTemplate @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  tag      Tag            @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([scriptId, tagId])
+}
+
+model CallTag {
+  callLogId String
+  tagId     String
+  callLog   CallLog @relation(fields: [callLogId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([callLogId, tagId])
+}
+
+model ScriptTemplate {
+  id            String        @id @default(cuid())
+  name          String
+  targetProfile String        // 対象顧客プロファイル（例: 歯科医院、整骨院など）
+  purpose       String        // 目的（例: アポ取得、商品紹介など）
+  bodyMarkdown  String        @db.Text // スクリプト本文（Markdown形式）
+  status        ScriptStatus  @default(DRAFT)
+  version       Int           @default(1) // Current version number
+  isPublic      Boolean       @default(false) // Can other teams see this?
+  metadata      Json?         // Flexible field for additional data
+  createdById   String?
+  createdBy     User?         @relation("CreatedScripts", fields: [createdById], references: [id])
+  teamId        String?
+  team          Team?         @relation(fields: [teamId], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  callLogs CallLog[]
+  tags     ScriptTag[]
+  versions ScriptVersion[]
+}
+
+model ScriptVersion {
+  id               String         @id @default(cuid())
+  scriptTemplateId String
+  scriptTemplate   ScriptTemplate @relation(fields: [scriptTemplateId], references: [id], onDelete: Cascade)
+  version          Int            // Version number
+  bodyMarkdown     String         @db.Text
+  changeNote       String?        // What changed in this version
+  createdById      String?
+  createdBy        User?          @relation(fields: [createdById], references: [id])
+  createdAt        DateTime       @default(now())
+
+  @@unique([scriptTemplateId, version])
 }
 
 model CallLog {
-  id                  String          @id @default(cuid())
+  id                  String       @id @default(cuid())
   scriptTemplateId    String
-  scriptTemplate      ScriptTemplate  @relation(fields: [scriptTemplateId], references: [id], onDelete: Cascade)
+  scriptTemplate      ScriptTemplate @relation(fields: [scriptTemplateId], references: [id], onDelete: Cascade)
+  userId              String?      // Who made the call
+  user                User?        @relation(fields: [userId], references: [id])
   callDate            DateTime
-  outcome             String          // 結果（例: アポ獲得、検討中、見送りなど）
-  notes               String          @db.Text // 通話メモ
-  aiFeedbackMarkdown  String?         @db.Text // AIフィードバック（Markdown形式）
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  outcome             String       // Using string for backwards compatibility; consider enum migration
+  notes               String       @db.Text // 通話メモ
+  duration            Int?         // Call duration in seconds
+  customerName        String?      // Name of the person called
+  customerCompany     String?      // Company name
+  nextFollowUpDate    DateTime?    // Scheduled follow-up
+  sentiment           String?      // positive, neutral, negative
+  aiFeedbackMarkdown  String?      @db.Text // AIフィードバック（Markdown形式）
+  metadata            Json?        // Flexible field for additional data
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  coachingNotes CoachingNote[]
+  tags          CallTag[]
+}
+
+model CoachingNote {
+  id         String   @id @default(cuid())
+  callLogId  String
+  callLog    CallLog  @relation(fields: [callLogId], references: [id], onDelete: Cascade)
+  coachId    String   // Manager who left the note
+  coach      User     @relation(fields: [coachId], references: [id])
+  note       String   @db.Text
+  rating     Int?     // 1-5 star rating
+  isPrivate  Boolean  @default(false) // Only coach and rep can see
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

@@ -1,57 +1,62 @@
-import OpenAI from 'openai'
+import { getAIAdapter } from './adapters/ai-adapter'
+import { logger } from './logger'
+import { measureAsync, recordCounter, recordGauge, Metrics } from './metrics'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
-
+/**
+ * Generate AI feedback for a call log
+ * Uses the configured AI adapter (OpenAI, mock, or custom)
+ */
 export async function generateCallFeedback(
   scriptBody: string,
   callNotes: string,
   outcome: string
 ): Promise<string> {
-  try {
-    const prompt = `あなたは経験豊富なセールスコーチです。以下の営業スクリプトと実際の通話メモを分析し、フィードバックをMarkdown形式で提供してください。
+  return measureAsync(
+    Metrics.AI_LATENCY,
+    async () => {
+      try {
+        logger.info('Generating AI feedback', {
+          scriptLength: scriptBody.length,
+          notesLength: callNotes.length,
+          outcome,
+        })
 
-## 営業スクリプト
-${scriptBody}
+        recordCounter(Metrics.AI_REQUEST, 1, { type: 'call_feedback' })
 
-## 通話メモ
-${callNotes}
+        const adapter = getAIAdapter()
+        const response = await adapter.generateCallFeedback({
+          scriptBody,
+          callNotes,
+          outcome,
+        })
 
-## 結果
-${outcome}
+        if (response.tokensUsed) {
+          recordGauge(Metrics.AI_TOKENS, response.tokensUsed, {
+            model: response.model || 'unknown',
+          })
+        }
 
-以下の3項目について、具体的かつ実践的なフィードバックをMarkdown形式で出力してください：
+        recordCounter(Metrics.FEEDBACK_GENERATED, 1, {
+          model: response.model || 'unknown',
+        })
 
-### 良かった点
-- 通話で効果的だった部分を3つ挙げてください
+        logger.info('AI feedback generated successfully', {
+          tokensUsed: response.tokensUsed,
+          model: response.model,
+        })
 
-### 改善案
-- より良い結果を得るための具体的な改善提案を3つ挙げてください
+        return response.feedback
+      } catch (error) {
+        recordCounter(Metrics.AI_ERROR, 1, { type: 'call_feedback' })
 
-### 次回使える一文
-- 次回の通話で使える効果的なフレーズを1つ提案してください
-`
+        logger.error('Error generating AI feedback', error instanceof Error ? error : undefined, {
+          scriptLength: scriptBody.length,
+          notesLength: callNotes.length,
+        })
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'あなたは経験豊富なセールスコーチです。営業通話の分析とフィードバックを提供します。',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-    })
-
-    return response.choices[0].message.content || 'フィードバックの生成に失敗しました。'
-  } catch (error) {
-    console.error('Error generating AI feedback:', error)
-    throw new Error('AI feedback generation failed')
-  }
+        throw new Error('AI feedback generation failed')
+      }
+    },
+    { type: 'call_feedback' }
+  )
 }
