@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { scriptTemplateSchema } from '@/lib/validations'
+import { handleApiError, ApiError } from '@/lib/api-error'
 
 // GET /api/scripts/[id] - スクリプトテンプレート詳細取得
 export async function GET(
@@ -18,19 +20,12 @@ export async function GET(
     })
 
     if (!script) {
-      return NextResponse.json(
-        { error: 'Script not found' },
-        { status: 404 }
-      )
+      throw new ApiError(404, 'Script not found')
     }
 
     return NextResponse.json(script)
   } catch (error) {
-    console.error('Error fetching script:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch script' },
-      { status: 500 }
-    )
+    return handleApiError(error)
   }
 }
 
@@ -41,25 +36,18 @@ export async function PUT(
 ) {
   try {
     const body = await request.json()
-    const { name, targetProfile, purpose, bodyMarkdown } = body
+
+    // バリデーション
+    const validated = scriptTemplateSchema.parse(body)
 
     const script = await prisma.scriptTemplate.update({
       where: { id: params.id },
-      data: {
-        name,
-        targetProfile,
-        purpose,
-        bodyMarkdown,
-      },
+      data: validated,
     })
 
     return NextResponse.json(script)
   } catch (error) {
-    console.error('Error updating script:', error)
-    return NextResponse.json(
-      { error: 'Failed to update script' },
-      { status: 500 }
-    )
+    return handleApiError(error)
   }
 }
 
@@ -75,10 +63,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting script:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete script' },
-      { status: 500 }
-    )
+    return handleApiError(error)
   }
 }

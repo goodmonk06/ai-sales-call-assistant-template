@@ -18,6 +18,7 @@ export default function RootLayout({
           <nav className="container mx-auto flex gap-6">
             <a href="/" className="font-bold text-xl">AI営業通話アシスタント</a>
             <a href="/scripts" className="hover:underline">スクリプト管理</a>
+            <a href="/calls" className="hover:underline">通話ログ一覧</a>
             <a href="/calls/new" className="hover:underline">通話ログ登録</a>
           </nav>
         </header>
